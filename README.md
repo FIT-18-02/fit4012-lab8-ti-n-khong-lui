@@ -1,4 +1,4 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/1tfxOnrV)
+[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/lnmamCNz)
 # FIT4012 - Lab 8 - Xây dựng ứng dụng truyền dữ liệu an toàn
 
 Repo starter kit này dùng cho **Lab 8**: xây dựng chương trình truyền dữ liệu an toàn qua **TCP socket** bằng mô hình lai:
@@ -15,20 +15,20 @@ Lab 8 kế thừa cách tổ chức repo của Lab 6 socket starter, nhưng thay
 
 ## Team members
 
-- **Thành viên 1**: TODO_MEMBER_1 - MSSV: TODO_MEMBER_1_ID
-- **Thành viên 2**: TODO_MEMBER_2 - MSSV: TODO_MEMBER_2_ID
+- **Thành viên 1**: Đặng Quang Tiến - MSSV: 1871020570
+- **Thành viên 2**: Nguyễn Hoàng - MSSV: 1871020250
 
 ## Task division
 
-- **Thành viên 1 phụ trách chính**: TODO_ROLE_MEMBER_1
-- **Thành viên 2 phụ trách chính**: TODO_ROLE_MEMBER_2
-- **Phần làm chung**: TODO_SHARED_WORK
+- **Đặng Quang Tiến phụ trách chính**: `secure_transfer_utils.py` (DES-CBC, RSA-OAEP, SHA-256, packet builder/parser), `keygen.py`, viết báo cáo và threat model.
+- **Nguyễn Hoàng phụ trách chính**: `sender.py`, `receiver.py`, cấu hình socket TCP, viết test (`tests/`), thu thập log minh chứng.
+- **Phần làm chung**: Thiết kế protocol packet, kiểm thử end-to-end, trả lời câu hỏi mở rộng.
 
 ## Demo roles
 
-- **Demo Sender / mã hóa / log gửi**: TODO_DEMO_ROLE_1
-- **Demo Receiver / giải mã / kiểm tra hash**: TODO_DEMO_ROLE_2
-- **Cả hai cùng trả lời câu hỏi mở rộng AES và chữ ký số**: TODO_DEMO_ROLE_SHARED
+- **Demo Sender / mã hóa / log gửi**: Nguyễn Hoàng
+- **Demo Receiver / giải mã / kiểm tra hash**: Đặng Quang Tiến
+- **Cả hai cùng trả lời câu hỏi mở rộng AES và chữ ký số**: Đặng Quang Tiến và Nguyễn Hoàng
 
 ---
 
@@ -127,7 +127,97 @@ Trong demo học tập local, hai file có thể nằm cùng repo. Trong hệ th
 
 ---
 
-## Bước 2 - Chạy demo local
+## Bước 2 - Demo 2 máy thật (LAN) — dành cho kiểm tra nhóm
+
+> **Hai thành viên cần cùng mạng WiFi/LAN.** Không cần cài đặt thêm gì ngoài repo và Python.
+
+### Sơ đồ tổng quát
+
+```
+[Máy Receiver - Tiến]                     [Máy Sender - Hoàng]
+─────────────────────────────────────────────────────────────────
+1. python keygen.py                         
+   → tạo receiver_public.pem               
+   → tạo receiver_private.pem (giữ kín)    
+                                            
+2. python -m http.server 8080              
+   (serve public key qua HTTP)             
+                                            2. Tải public key:
+                                               GET http://<IP Tien>:8080/keys/receiver_public.pem
+                                            
+3. python receiver.py  ◄────────────────── 3. python sender.py → gửi packet mã hóa
+   - giải mã DES key bằng private.pem         - dùng public.pem mã hóa DES key
+   - giải mã bản tin bằng DES-CBC             - mã hóa bản tin bằng DES-CBC
+   - kiểm tra SHA-256                         - tính SHA-256 của bản tin gốc
+```
+
+### Cách chạy nhanh bằng script có sẵn
+
+**Máy Tiến (Receiver) — chạy trước:**
+
+```powershell
+.\run_receiver.ps1
+```
+
+Script tự động:
+- In ra IP máy Tiến để Hoàng biết
+- Sinh RSA key pair nếu chưa có
+- Mở HTTP server port 8080 để chia sẻ public key
+- Bắt đầu lắng nghe socket port 6000
+
+**Máy Hoàng (Sender) — chạy sau khi Receiver đã sẵn sàng:**
+
+```powershell
+.\run_sender.ps1 -ReceiverIP <IP_may_Tien>
+```
+
+Ví dụ nếu IP Tiến là `192.168.1.10`:
+
+```powershell
+.\run_sender.ps1 -ReceiverIP 192.168.1.10
+```
+
+Script tự động:
+- Tải `receiver_public.pem` từ máy Tiến qua HTTP
+- Dùng public key đó mã hóa DES key bằng RSA-OAEP
+- Gửi packet qua TCP socket đến máy Tiến
+
+### Tìm IP máy Tiến (Receiver)
+
+```powershell
+ipconfig | findstr "IPv4"
+```
+
+Lấy địa chỉ dạng `192.168.x.x` hoặc `10.x.x.x` (không dùng `127.0.0.1`).
+
+### Cài đặt thủ công (không dùng script)
+
+**Máy Tiến — Terminal 1 (serve key):**
+
+```powershell
+python keygen.py
+python -m http.server 8080
+```
+
+**Máy Tiến — Terminal 2 (receiver):**
+
+```powershell
+$env:RECEIVER_HOST="0.0.0.0"; $env:DATA_PORT="6000"; $env:RECEIVER_PRIVATE_KEY="keys/receiver_private.pem"; $env:RECEIVER_LOG_FILE="logs/receiver_success.log"; $env:OUTPUT_FILE="sample_output.txt"; python receiver.py
+```
+
+**Máy Hoàng:**
+
+```powershell
+# Tai public key tu may Tien
+Invoke-WebRequest -Uri "http://<IP_Tien>:8080/keys/receiver_public.pem" -OutFile "keys/receiver_public.pem"
+
+# Gui ban tin
+$env:SERVER_IP="<IP_Tien>"; $env:DATA_PORT="6000"; $env:RECEIVER_PUBLIC_KEY="keys/receiver_public.pem"; $env:MESSAGE="Xin chao FIT4012! Lab 8 - Dang Quang Tien & Nguyen Hoang"; $env:SENDER_LOG_FILE="logs/sender_success.log"; python sender.py
+```
+
+---
+
+## Bước 2 - Chạy demo local (1 máy)
 
 ### Terminal 1 - Receiver
 
